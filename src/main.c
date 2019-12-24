@@ -27,6 +27,8 @@
 #include <strings.h>
 #define XVERSION 3
 
+static const char SEARCH_DIR[] = "/";
+
 static int initialize_mount(FATFS* outFS, u8 devNum)
 {
 	sdmmc_t* currCont = get_controller_for_index(devNum);
@@ -87,7 +89,7 @@ static NOINLINE int display_file_picker(char* outFilenameBuf, size_t* outFilesiz
     DIR dir;
     memset(&dir, 0, sizeof(dir));
 
-    FRESULT res = f_opendir(&dir, "/");
+    FRESULT res = f_opendir(&dir, SEARCH_DIR);
     if (res == FR_OK) 
     {
         while (res == FR_OK)
@@ -136,8 +138,11 @@ static NOINLINE int display_file_picker(char* outFilenameBuf, size_t* outFilesiz
                     lastFile = lastFile->next;
                 }
 
-                lastFile->fileName = alloca(nameLen+1);
-                memcpy(lastFile->fileName, nameStr, nameLen+1);
+                lastFile->fileName = alloca(ARRAY_SIZE(SEARCH_DIR)+nameLen+1);
+                memcpy(lastFile->fileName, SEARCH_DIR, ARRAY_SIZE(SEARCH_DIR));
+                if (strcasecmp(SEARCH_DIR, "/"))
+                    strlcat(lastFile->fileName, "/", ARRAY_SIZE(SEARCH_DIR)+1);
+                strlcat(lastFile->fileName, nameStr, ARRAY_SIZE(SEARCH_DIR)+nameLen+1);
 
                 lastFile->fileSize = fno.fsize;
                 lastFile->next = NULL;
@@ -149,10 +154,10 @@ static NOINLINE int display_file_picker(char* outFilenameBuf, size_t* outFilesiz
     }
 
     if (files == NULL)
-        printk("No ini files found in root of sdcard, switching to USB command mode...\n");
+        printk("No ini files found in %s of sdcard, switching to USB command mode...\n", (!strcasecmp(SEARCH_DIR, "/") ? "root" : SEARCH_DIR));
     else
     {
-        printk("Choose ini file from sdcard root:\n\n");
+        printk("Choose ini file from sdcard %s:\n\n", (!strcasecmp(SEARCH_DIR, "/") ? "root" : SEARCH_DIR));
         int startRow = video_get_row();
         int startCol = video_get_col();
 
@@ -167,8 +172,16 @@ static NOINLINE int display_file_picker(char* outFilenameBuf, size_t* outFilesiz
             {
 #ifndef USB_DEBUGGING
                 static const char PREFERRED_FILENAME[] = "memloader.ini";
-                if (!strcasecmp(lastFile->fileName, PREFERRED_FILENAME))
-                    break;
+                char *preferred_filename = alloca(ARRAY_SIZE(SEARCH_DIR)+ARRAY_SIZE(PREFERRED_FILENAME)+1);
+                memcpy(preferred_filename, SEARCH_DIR, ARRAY_SIZE(SEARCH_DIR));
+                if (strcasecmp(SEARCH_DIR, "/"))
+                    strlcat(preferred_filename, "/", ARRAY_SIZE(SEARCH_DIR)+1);
+                strlcat(preferred_filename, PREFERRED_FILENAME, ARRAY_SIZE(SEARCH_DIR)+ARRAY_SIZE(PREFERRED_FILENAME)+1);
+                if (!strcasecmp(lastFile->fileName, preferred_filename)) {
+                    memcpy(outFilenameBuf, lastFile->fileName, strlen(lastFile->fileName)+1);
+                    *outFilesizeBuf = lastFile->fileSize;
+                    return currSelection+1;
+                }
 #endif
                 currSelection++;
                 lastFile = lastFile->next;
